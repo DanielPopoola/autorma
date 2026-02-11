@@ -154,6 +154,19 @@ class BatchOrchestrator:
         with open(results_file, "w") as f:
             json.dump(output, f, indent=2)
 
+        from collections import Counter
+        class_dist = Counter([r['predicted_class'] for r in all_results])
+        
+        from metrics_pusher import MetricsPusher
+        pusher = MetricsPusher()
+        pusher.push_metrics(
+            duration=output['duration_seconds'],
+            total=len(unprocessed),
+            successful=len(all_results),
+            failed=len(self.failed_images),
+            class_distribution=dict(class_dist)
+        )
+        
         logger.info("=" * 60)
         logger.info("✓ Batch inference complete")
         logger.info(f"  Total: {len(unprocessed)} images")
