@@ -62,9 +62,13 @@ with mlflow.start_run(run_name="efficientnet_b0_v1") as run:
             from torchvision import transforms
 
             self.device = "cpu"
-            checkpoint = torch.load(context.artifacts["model"], map_location=self.device)
+            checkpoint = torch.load(
+                context.artifacts["model"], map_location=self.device
+            )
 
-            self.model = timm.create_model("efficientnet_b0", pretrained=False, num_classes=5)
+            self.model = timm.create_model(
+                "efficientnet_b0", pretrained=False, num_classes=5
+            )
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.model.eval()
 
@@ -96,7 +100,10 @@ with mlflow.start_run(run_name="efficientnet_b0_v1") as run:
                     {
                         "predicted_class": self.idx_to_class[pred_idx],
                         "confidence": float(probs[pred_idx]),
-                        "all_probabilities": {self.idx_to_class[i]: float(probs[i]) for i in range(len(probs))},
+                        "all_probabilities": {
+                            self.idx_to_class[i]: float(probs[i])
+                            for i in range(len(probs))
+                        },
                     }
                 )
 
@@ -106,7 +113,11 @@ with mlflow.start_run(run_name="efficientnet_b0_v1") as run:
     conda_env = {
         "name": "refund-classifier-env",
         "channels": ["defaults", "conda-forge"],
-        "dependencies": ["python=3.12", "uv", {"uv": ["mlflow", "torch", "torchvision", "timm", "pillow"]}],
+        "dependencies": [
+            "python=3.12",
+            "uv",
+            {"uv": ["mlflow", "torch", "torchvision", "timm", "pillow"]},
+        ],
     }
 
     mlflow.pyfunc.log_model(

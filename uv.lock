@@ -54,6 +54,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "mlflow" },
+    { name = "python-multipart" },
     { name = "ruff" },
     { name = "timm" },
     { name = "torch" },
@@ -64,6 +65,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.128.7" },
     { name = "mlflow", specifier = ">=3.9.0" },
+    { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "ruff", specifier = ">=0.15.0" },
     { name = "timm", specifier = ">=1.0.24" },
     { name = "torch", specifier = ">=2.10.0" },
