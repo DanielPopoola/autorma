@@ -13,3 +13,8 @@ data/
 
 .env
 logs/
+
+mlflow_data/
+models/
+*.pth
+*.pkl
