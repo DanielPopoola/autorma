@@ -204,7 +204,7 @@ Memorize these metrics:
 - [ ] Dataset size: **2,500 images** (5 classes × 500 each)
 - [ ] Training time: **~12 minutes** (Colab T4 GPU)
 - [ ] Inference speed: **~5 seconds per batch** (10 images on CPU)
-- [ ] Model size: **20 MB**
+- [ ] Model size: **50 MB**
 - [ ] Code lines: ~**1,500 lines** (estimate with `cloc .`)
 
 ---

@@ -547,6 +547,46 @@ subprocess.run(
 
 ## Technology Choices
 
+
+### Why uv?
+
+- **10-100x faster** than pip
+- **Deterministic** via `uv.lock`
+- **Single source of truth** in `pyproject.toml`
+- **Modern** Python packaging standard
+
+### Installing Dependencies
+```bash
+# With uv (recommended)
+uv sync
+
+# Without uv (generates requirements.txt)
+uv pip compile pyproject.toml -o requirements.txt
+pip install -r requirements.txt
+```
+
+### Adding New Dependencies
+```bash
+# Add a new package
+uv add pandas
+
+# Add dev dependency
+uv add --dev pytest
+
+# Update lockfile
+uv lock
+```
+
+### Why No Component-Specific requirements.txt?
+
+Since all components run in the same Python environment and share dependencies, we use a single `pyproject.toml` at the root. This:
+- Eliminates duplicate dependency declarations
+- Ensures version consistency across components
+- Simplifies dependency management
+- Follows modern Python monorepo patterns
+
+**For Docker:** You can still generate a `requirements.txt` from `pyproject.toml` when needed.
+
 ### Why Python?
 
 **Pros:**

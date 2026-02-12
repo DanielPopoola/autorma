@@ -134,7 +134,7 @@ autorma/
 | Asset | Size | Location | Download Link | Required? |
 |-------|------|----------|---------------|-----------|
 | Training Dataset | ~1GB | `data/processed/` | [Google Drive - Dataset](https://drive.google.com/drive/folders/1g1V4I3WL8FfXLZfkXqrTYcCR8etojiBY?usp=drive_link) | ✅ Yes |
-| Trained Model v1 | ~50B | `models/v1/` | [Google Drive - Model](https://drive.google.com/drive/folders/1IQ4wyuTYO0TuQvKg0bIZ3n1kTZQpuvtp?usp=drive_link) | ✅ Yes |
+| Trained Model v1 | ~50MB | `models/v1/` | [Google Drive - Model](https://drive.google.com/drive/folders/1IQ4wyuTYO0TuQvKg0bIZ3n1kTZQpuvtp?usp=drive_link) | ✅ Yes |
 | MLflow Database | Variable | `mlflow_data/` | Auto-created on first run | ⚠️ Auto |
 | Sample Results | <1MB | `data/inference/output/` | Optional (generated during use) | ❌ No |
 
@@ -194,7 +194,7 @@ ls -lh models/v1/
 - 8GB RAM minimum
 - Docker & Docker Compose (for monitoring)
 - WSL2 (if on Windows)
-- uv(https://docs.astral.sh/uv/)
+- uv (https://docs.astral.sh/uv/)
 - **Downloaded assets** (see Asset Management section above)
 
 ### 1. Clone and Setup
@@ -208,8 +208,12 @@ ls data/processed/train  # Should show category folders
 ls models/v1/            # Should show .pth and .json files
 
 
-# Install dependencies for all components
+# Install dependencies with uv (recommended)
 uv sync
+
+# Alternative: Generate requirements.txt for pip users
+uv pip compile pyproject.toml -o requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Register Model in MLflow
