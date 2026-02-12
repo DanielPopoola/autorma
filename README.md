@@ -142,7 +142,7 @@ autorma/
 ### 1. Clone and Setup
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/DanielPopoola/autorma.git
 cd autorma
 
 # Create virtual environment
