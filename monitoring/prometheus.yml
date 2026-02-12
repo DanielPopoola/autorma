@@ -4,7 +4,7 @@ global:
 scrape_configs:
   - job_name: 'model-service'
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['172.18.211.68:8000']
     metrics_path: '/metrics'
   
   - job_name: 'pushgateway'
