@@ -89,16 +89,13 @@ autorma/
 │
 ├── model-service/              # FastAPI prediction service
 │   ├── app.py
-│   └── requirements.txt
 │
 ├── orchestrator/               # Batch inference pipeline
 │   ├── batch_inference.py
 │   ├── metrics_pusher.py
-│   └── requirements.txt
 │
 ├── streamlit-ui/               # Web interface
 │   ├── app.py
-│   └── requirements.txt
 │
 ├── monitoring/                 # Prometheus + Grafana
 │   ├── docker-compose.yml
@@ -106,7 +103,6 @@ autorma/
 │
 ├── mlflow_data/                # MLflow artifacts and metadata
 │   ├── artifacts/
-│   ├── mlruns/
 │   └── mlflow.db
 │
 ├── models/                     # Trained model checkpoints
@@ -118,14 +114,74 @@ autorma/
 │   ├── register_model.py
 │   └── set_production.py
 │
-├── notebooks/                  # Training notebooks
-│   └── 01_data_preparation.ipynb
+├── notebooks/               # Training notebooks
+|  ├── 01_data_prepartion.ipynb
+│  └── 02_train_model.ipynb
 │
 ├── logs/                       # Application logs
 │
 ├── README.md
-├── ARCHITECTURE.md
-└── DEVELOPMENT.md
+├── docs/
+└── requirements.txt
+```
+
+---
+
+## 📦 Asset Management
+
+**Important:** Due to file sizes, the following assets are **not included** in the Git repository and must be downloaded separately.
+
+| Asset | Size | Location | Download Link | Required? |
+|-------|------|----------|---------------|-----------|
+| Training Dataset | ~1GB | `data/processed/` | [Google Drive - Dataset](https://drive.google.com/drive/folders/1g1V4I3WL8FfXLZfkXqrTYcCR8etojiBY?usp=drive_link) | ✅ Yes |
+| Trained Model v1 | ~50B | `models/v1/` | [Google Drive - Model](https://drive.google.com/drive/folders/1IQ4wyuTYO0TuQvKg0bIZ3n1kTZQpuvtp?usp=drive_link) | ✅ Yes |
+| MLflow Database | Variable | `mlflow_data/` | Auto-created on first run | ⚠️ Auto |
+| Sample Results | <1MB | `data/inference/output/` | Optional (generated during use) | ❌ No |
+
+📘 **For detailed download instructions and troubleshooting, see [ASSETS.md](ASSETS.md)**
+
+### First-Time Setup Checklist
+
+Before running the system, ensure you have:
+
+- [ ] Downloaded and extracted **dataset.zip** to `data/processed/`
+- [ ] Downloaded and extracted **model_v1.zip** to `models/v1/`
+- [ ] Verified directory structure (see below)
+
+**Verify Setup:**
+```bash
+# Check dataset structure
+tree data/processed -L 2
+
+# Expected output:
+# data/processed/
+# ├── train/
+# │   ├── casual shoes/
+# │   ├── handbags/
+# │   ├── shirts/
+# │   ├── tops/
+# │   └── watches/
+# ├── val/
+# │   └── (same structure)
+# ├── test/
+# │   └── (same structure)
+# └── dataset_info.json
+
+# Check model exists
+ls -lh models/v1/
+
+# Expected output:
+# best_model.pth
+# training_metadata.json
+```
+
+**Alternative: Use Setup Script**
+
+```bash
+# Run automated setup (downloads from configured links)
+./scripts/setup_assets.sh
+
+# Follow prompts to download missing files
 ```
 
 ---
@@ -138,6 +194,8 @@ autorma/
 - 8GB RAM minimum
 - Docker & Docker Compose (for monitoring)
 - WSL2 (if on Windows)
+- uv(https://docs.astral.sh/uv/)
+- **Downloaded assets** (see Asset Management section above)
 
 ### 1. Clone and Setup
 
@@ -145,17 +203,27 @@ autorma/
 git clone https://github.com/DanielPopoola/autorma.git
 cd autorma
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Verify you've downloaded required assets
+ls data/processed/train  # Should show category folders
+ls models/v1/            # Should show .pth and .json files
+
 
 # Install dependencies for all components
-pip install -r model-service/requirements.txt
-pip install -r orchestrator/requirements.txt
-pip install -r streamlit-ui/requirements.txt
+uv sync
 ```
 
-### 2. Start MLflow Server
+### 2. Register Model in MLflow
+
+Before starting services, register the downloaded model:
+
+```bash
+# Start MLflow server first (see step 3)
+# Then in another terminal:
+python scripts/register_model.py
+python scripts/set_production.py
+```
+
+### 3. Start MLflow Server
 
 ```bash
 ABS_PATH=$(pwd)
@@ -168,7 +236,7 @@ mlflow server \
 
 Access at: http://localhost:5000
 
-### 3. Start Model Service
+### 4. Start Model Service
 
 ```bash
 # In a new terminal
@@ -178,7 +246,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 Test health: `curl http://localhost:8000/health`
 
-### 4. Start Monitoring Stack
+### 5. Start Monitoring Stack
 
 ```bash
 cd monitoring
@@ -189,7 +257,7 @@ Access:
 - Grafana: http://localhost:3000 (admin/admin)
 - Prometheus: http://localhost:9090
 
-### 5. Run Streamlit UI
+### 6. Run Streamlit UI
 
 ```bash
 streamlit run streamlit-ui/app.py
@@ -406,6 +474,53 @@ curl http://localhost:8000/metrics | grep images_processed
 - **Time-Series Data:** Perfect for tracking metrics over time
 - **Alerting Ready:** Can add alerts on metric thresholds
 - **Visualization:** Grafana provides professional dashboards
+
+---
+
+## 🔄 Reproducibility
+
+### Recreating the System from Scratch
+
+**1. Dataset Preparation:**
+- Source: [Fashion Product Images Dataset on Kaggle](https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset)
+- Process documented in: `notebooks/01_data_preparation.ipynb`
+- Categories: Casual Shoes, Handbags, Shirts, Tops, Watches
+- 500 images per class, 70/15/15 train/val/test split
+- **N.B :** - Run `notebooks/01_data_preparation.ipynb` in Kaggle notebooks not on local PC.
+
+**2. Model Training:**
+- Training notebook: Available in Google Colab or local Jupyter
+- Architecture: EfficientNet-B0 (pretrained on ImageNet)
+- Hyperparameters logged in: `models/v1/training_metadata.json`
+- Training environment: Google Colab with T4 GPU
+- Training time: ~12 minutes for 15 epochs
+
+**3. Model Registration:**
+```bash
+# After training and downloading checkpoint
+python scripts/register_model.py
+python scripts/set_production.py
+```
+
+**4. System Deployment:**
+- Follow Quick Start guide above
+- All configuration is in code (no manual setup required)
+
+### For Evaluators / New Developers
+
+**To verify this project:**
+1. Download assets from links in Asset Management section
+2. Follow Quick Start instructions
+3. System should be running within 30 minutes
+
+**To retrain from scratch:**
+1. Download raw dataset from Kaggle
+2. Run data preparation notebook
+3. Run training notebook on Colab
+4. Register new model version
+5. Promote to production
+
+All steps are documented and reproducible.
 
 ---
 

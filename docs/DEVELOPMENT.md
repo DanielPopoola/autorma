@@ -16,6 +16,171 @@ This document covers the development process, implementation details, and lesson
 
 ---
 
+## Asset Management & Reproducibility
+
+### Files Not in Git
+
+The following are excluded from version control via `.gitignore`:
+
+```gitignore
+data/                 # Training/test datasets (~150MB)
+models/               # Model checkpoints (~20MB each)
+mlflow_data/          # MLflow artifacts and DB (grows over time)
+logs/                 # Runtime logs (regenerated)
+*.pth                 # PyTorch model weights
+*.pkl                 # Pickle files
+__pycache__/          # Python cache
+.venv/                # Virtual environment
+```
+
+### Why These Are Excluded
+
+| Directory/File | Reason | Size | Hosted Where |
+|----------------|--------|------|--------------|
+| `data/` | Large binary files, can be regenerated  | Google Drive |
+| `models/*.pth` | GitHub 100MB file limit, versioned in MLflow | ~50MB each | Google Drive |
+| `mlflow_data/` | Database grows over time, user-specific | Variable | Local only |
+| `logs/` | Runtime-generated, not source code | Variable | Not needed |
+| `.venv/` | Environment-specific, recreatable from requirements.txt | ~500MB | Not needed |
+
+### Reproducibility Strategy
+
+**For Data:**
+- Source: Kaggle Fashion Product Images
+- Sampling script: `notebooks/01_data_preparation.ipynb`
+- Seed: 42 (for reproducible sampling)
+- Download link: Provided in README
+
+**For Models:**
+- Training code: `notebooks/02_model_training.ipynb`
+- All hyperparameters logged in: `training_metadata.json`
+- Random seeds set for reproducibility
+- Pretrained base: EfficientNet-B0 (timm library)
+
+**For MLflow:**
+- First run auto-creates database
+- Experiments and runs logged programmatically
+- Can restore from backup if needed
+
+### New Developer Onboarding
+
+**From a fresh clone:**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/DanielPopoola/autorma.git
+cd autorma
+
+# 2. Download required assets
+# Download dataset.zip from README link
+# Download model_v1.zip from README link
+unzip dataset.zip -d data/
+unzip model_v1.zip -d models/
+
+# 3. Setup Python environment
+uv sync
+
+
+# 4. Create necessary directories
+mkdir -p data/inference/{input,output,checkpoints}
+mkdir -p mlflow_data/{artifacts,mlruns}
+mkdir -p logs
+
+# 5. Start MLflow
+ABS_PATH=$(pwd)
+mlflow server \
+  --backend-store-uri sqlite:///$ABS_PATH/mlflow_data/mlflow.db \
+  --default-artifact-root file://$ABS_PATH/mlflow_data/artifacts \
+  --host 0.0.0.0 \
+  --port 5000 &
+
+# 6. Register model
+python scripts/register_model.py
+python scripts/set_production.py
+
+# 7. Follow Quick Start in README
+```
+
+**Total setup time:** ~30 minutes (including downloads)
+
+### Retraining from Scratch
+
+**To reproduce the exact model:**
+
+```bash
+# 1. Dataset preparation (Kaggle)
+# Open notebooks/01_data_preparation.ipynb
+# Run all cells (uses fixed seed=42)
+# Output: data/processed/ with train/val/test splits
+
+# 2. Model training (Google Colab recommended)
+# Open notebooks/02_model_training.ipynb in Colab
+# Mount Google Drive with dataset
+# Run all cells
+# Download: best_model.pth, training_metadata.json
+
+# 3. Local registration
+# Copy files to models/v2/
+python scripts/register_model.py  # Creates version 2
+python scripts/set_production.py   # Promotes v2 to production
+
+# 4. Restart Model Service
+# Service will load new version on next startup
+```
+
+### Asset Hosting Options
+
+**Current: Google Drive**
+- Pros: Free, easy sharing, no setup
+- Cons: Manual download, no versioning
+- Use for: Academic projects, demonstrations
+
+**Alternative: Hugging Face Hub** (Professional)
+```python
+# Upload model
+from huggingface_hub import HfApi
+api = HfApi()
+api.upload_folder(
+    folder_path="models/v1",
+    repo_id="yourusername/refund-classifier",
+    repo_type="model"
+)
+
+# Download model
+from huggingface_hub import snapshot_download
+snapshot_download(
+    repo_id="yourusername/refund-classifier",
+    local_dir="models/v1"
+)
+```
+
+
+### Backup Strategy
+
+**Critical files to backup:**
+- `mlflow_data/mlflow.db` - Experiment history
+- `models/*/` - Model checkpoints (if not in external storage)
+- `data/processed/dataset_info.json` - Dataset metadata
+- Configuration files (already in Git)
+
+**Backup schedule:**
+- After each model training: Backup new model version
+- Weekly: Backup MLflow database
+- Never: No need to backup logs or cache
+
+**Restoration:**
+```bash
+# Restore MLflow database
+cp backup/mlflow.db mlflow_data/mlflow.db
+
+# Re-register models
+python scripts/register_model.py
+
+# System continues from last known state
+```
+
+---
+
 ## Development Timeline
 
 ### Stage 1: Dataset Preparation (Week 1)
@@ -27,7 +192,7 @@ This document covers the development process, implementation details, and lesson
 2. Identified 5 relevant categories: Shirts, Watches, Casual Shoes, Tops, Handbags
 3. Used Kaggle notebook to sample 500 images per class
 4. Split into train/val/test (70/15/15)
-5. Downloaded as zip (~150MB)
+5. Downloaded as zip (~750MB)
 6. Extracted to local `data/processed/` directory
 
 **Key Files Created:**
@@ -52,7 +217,7 @@ This document covers the development process, implementation details, and lesson
 **Goal:** Local MLflow tracking server operational
 
 **Process:**
-1. Installed MLflow: `pip install mlflow`
+1. Installed MLflow: `uv add mlflow`
 2. Created directory structure for artifacts
 3. Started server with SQLite backend
 4. Accessed UI to verify setup
@@ -156,12 +321,29 @@ This replaced the old "stages" approach (Production/Staging) with the new "alias
 
 **Model Loading:**
 ```python
-@app.on_event("startup")
-def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global model, model_version
-    mlflow.set_tracking_uri("http://127.0.0.1:5000")
-    model = mlflow.pyfunc.load_model("models:/refund-classifier/production")
-    model_version = "production"
+
+    mlflow_tracking_uri = "http://127.0.0.1:5000"
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+
+    try:
+        model_uri = "models:/refund-classifier@production"
+        logger.info(f"Loading model from: {model_uri}")
+        model = mlflow.pyfunc.load_model(model_uri)
+        model_version = "production"
+        logger.info(f"✓ Model loaded successfully: {model_version}")
+    except Exception as e:
+        logger.warning(f"Production model not found, loading latest: {e}")
+        model_uri = "models:/refund-classifier@latest"
+        model = mlflow.pyfunc.load_model(model_uri)
+        model_version = "latest"
+        logger.info(f"✓ Model loaded successfully: {model_version}")
+
+    yield
+
+    logger.info("Shutting down...")
 ```
 
 **Prediction Endpoint:**
@@ -194,7 +376,7 @@ curl -X POST "http://localhost:8000/predict" \
 - Image paths must be absolute, not relative
 
 **Solution:**
-- FastAPI's `@app.on_event("startup")` runs before accepting requests
+- FastAPI's `async def lifespan(app: FastAPI)` runs before accepting requests
 - Documented absolute path requirement in API contract
 
 ---
@@ -888,17 +1070,13 @@ cd monitoring && docker-compose down
 autorma/
 ├── model-service/       # Each component is self-contained
 │   ├── app.py
-│   └── requirements.txt
 ├── orchestrator/
 │   ├── batch_inference.py
 │   ├── metrics_pusher.py
-│   └── requirements.txt
 └── streamlit-ui/
     ├── app.py
-    └── requirements.txt
-```
 
-**Principle:** Each component has its own dependencies. No shared code that creates tight coupling.
+```
 
 ### Configuration Management
 

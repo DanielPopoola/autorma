@@ -1,20 +1,81 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyc
+*.pyo
+*.pyd
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+ENV/
+env/
 
+# Data files (large, hosted externally)
 data/
 
-.env
-logs/
-
-mlflow_data/
+# Model checkpoints (versioned in MLflow)
 models/
 *.pth
 *.pkl
+*.h5
+*.onnx
+
+# MLflow artifacts (local only, not shared)
+mlflow_data/
+mlruns/
+
+# Logs (runtime-generated)
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Docker volumes (generated locally)
+prometheus-data/
+grafana-data/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# OS-specific
+Thumbs.db
+.DS_Store
