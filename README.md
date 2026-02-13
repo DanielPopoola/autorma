@@ -69,7 +69,7 @@ Scheduled Automation:
   Cron (2 AM daily) → Batch Orchestrator → Process overnight returns
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed system design.
 
 ---
 
@@ -138,7 +138,7 @@ autorma/
 | MLflow Database | Variable | `mlflow_data/` | Auto-created on first run | ⚠️ Auto |
 | Sample Results | <1MB | `data/inference/output/` | Optional (generated during use) | ❌ No |
 
-📘 **For detailed download instructions and troubleshooting, see [ASSETS.md](ASSETS.md)**
+📘 **For detailed download instructions and troubleshooting, see [ASSETS.md](docs/ASSETS.md)**
 
 ### First-Time Setup Checklist
 
