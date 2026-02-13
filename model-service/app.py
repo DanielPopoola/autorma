@@ -4,13 +4,24 @@ from contextlib import asynccontextmanager
 import mlflow.pyfunc
 from pathlib import Path
 import logging
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import (
+    Counter,
+    Histogram,
+    Gauge,
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
 from fastapi.responses import Response
 import time
 
 from config import get_settings
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.FileHandler("logs/app.log"), logging.StreamHandler()],
+)
+
 logger = logging.getLogger(__name__)
 
 model = None
@@ -19,12 +30,22 @@ model_version = None
 settings = get_settings()
 
 # Prometheus metrics
-request_count = Counter('api_requests_total', 'Total API requests', ['endpoint', 'status'])
-request_duration = Histogram('api_request_duration_seconds', 'Request duration', ['endpoint'])
-prediction_confidence = Histogram('prediction_confidence', 'Prediction confidence scores', buckets=[0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0])
-predictions_by_class = Counter('predictions_by_class_total', 'Predictions by class', ['class_name'])
-model_loaded = Gauge('model_loaded', 'Whether model is loaded')
-images_processed = Counter('images_processed_total', 'Total images processed')
+request_count = Counter(
+    "api_requests_total", "Total API requests", ["endpoint", "status"]
+)
+request_duration = Histogram(
+    "api_request_duration_seconds", "Request duration", ["endpoint"]
+)
+prediction_confidence = Histogram(
+    "prediction_confidence",
+    "Prediction confidence scores",
+    buckets=[0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
+)
+predictions_by_class = Counter(
+    "predictions_by_class_total", "Predictions by class", ["class_name"]
+)
+model_loaded = Gauge("model_loaded", "Whether model is loaded")
+images_processed = Counter("images_processed_total", "Total images processed")
 
 
 @asynccontextmanager
@@ -65,7 +86,7 @@ class PredictResponse(BaseModel):
 
 @app.get("/health")
 def health():
-    request_count.labels(endpoint='/health', status='success').inc()
+    request_count.labels(endpoint="/health", status="success").inc()
     return {
         "status": "healthy",
         "model_loaded": model is not None,
@@ -76,37 +97,35 @@ def health():
 @app.post("/predict", response_model=PredictResponse)
 def predict(request: PredictRequest):
     start_time = time.time()
-    
+
     if model is None:
-        request_count.labels(endpoint='/predict', status='error').inc()
+        request_count.labels(endpoint="/predict", status="error").inc()
         raise HTTPException(status_code=503, detail="Model not loaded")
-    
+
     for path in request.image_paths:
         if not Path(path).exists():
-            request_count.labels(endpoint='/predict', status='error').inc()
+            request_count.labels(endpoint="/predict", status="error").inc()
             raise HTTPException(status_code=400, detail=f"Image not found: {path}")
-    
+
     try:
         predictions = model.predict({"image_paths": request.image_paths})
-        
+
         # Track metrics
         for pred in predictions:
-            prediction_confidence.observe(pred['confidence'])
-            predictions_by_class.labels(class_name=pred['predicted_class']).inc()
+            prediction_confidence.observe(pred["confidence"])
+            predictions_by_class.labels(class_name=pred["predicted_class"]).inc()
             images_processed.inc()
-        
+
         duration = time.time() - start_time
-        request_duration.labels(endpoint='/predict').observe(duration)
-        request_count.labels(endpoint='/predict', status='success').inc()
-        
-        return PredictResponse(
-            predictions=predictions,
-            model_version=model_version
-        )
+        request_duration.labels(endpoint="/predict").observe(duration)
+        request_count.labels(endpoint="/predict", status="success").inc()
+
+        return PredictResponse(predictions=predictions, model_version=model_version)
     except Exception as e:
-        request_count.labels(endpoint='/predict', status='error').inc()
+        request_count.labels(endpoint="/predict", status="error").inc()
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/metrics")
 def metrics():

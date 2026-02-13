@@ -100,7 +100,9 @@ class BatchOrchestrator:
 
         # Check model service health
         try:
-            health = requests.get(f"{settings.MODEL_SERVICE_URL}/health", timeout=5).json()
+            health = requests.get(
+                f"{settings.MODEL_SERVICE_URL}/health", timeout=5
+            ).json()
             logger.info(f"Model service: {health}")
         except Exception as e:
             logger.error(f"Model service unavailable: {e}")
@@ -158,18 +160,20 @@ class BatchOrchestrator:
             json.dump(output, f, indent=2)
 
         from collections import Counter
-        class_dist = Counter([r['predicted_class'] for r in all_results])
-        
+
+        class_dist = Counter([r["predicted_class"] for r in all_results])
+
         from metrics_pusher import MetricsPusher
+
         pusher = MetricsPusher()
         pusher.push_metrics(
-            duration=output['duration_seconds'],
+            duration=output["duration_seconds"],
             total=len(unprocessed),
             successful=len(all_results),
             failed=len(self.failed_images),
-            class_distribution=dict(class_dist)
+            class_distribution=dict(class_dist),
         )
-        
+
         logger.info("=" * 60)
         logger.info("✓ Batch inference complete")
         logger.info(f"  Total: {len(unprocessed)} images")

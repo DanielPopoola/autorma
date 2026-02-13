@@ -6,9 +6,7 @@ client = mlflow.MlflowClient()
 
 # Set alias for version 1
 client.set_registered_model_alias(
-    name="refund-classifier",
-    alias="production",
-    version="1"
+    name="refund-classifier", alias="production", version="1"
 )
 
 print("✓ Set version 1 to production alias")
