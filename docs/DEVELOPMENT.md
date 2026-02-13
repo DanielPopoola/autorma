@@ -311,7 +311,7 @@ This replaced the old "stages" approach (Production/Staging) with the new "alias
 **Goal:** FastAPI server serving predictions from MLflow model
 
 **Process:**
-1. Created `model-service/app.py` with FastAPI
+1. Created `model_service/app.py` with FastAPI
 2. Added startup event to load model from MLflow
 3. Implemented `/predict` endpoint
 4. Added Prometheus metrics instrumentation
@@ -356,7 +356,7 @@ def predict(request: PredictRequest):
 
 **Running:**
 ```bash
-cd model-service
+cd model_service
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
@@ -459,7 +459,7 @@ docker-compose up -d
 **Prometheus Configuration:**
 ```yaml
 scrape_configs:
-  - job_name: 'model-service'
+  - job_name: 'model_service'
     static_configs:
       - targets: ['<WSL_IP>:8000']  # Replace with actual IP
   
@@ -695,7 +695,7 @@ mlflow-start
 
 **Model Service:**
 ```bash
-cd model-service
+cd model_service
 uvicorn app:app --host 0.0.0.0 --port 8000
 
 # With auto-reload for development
@@ -1108,7 +1108,7 @@ cd monitoring && docker-compose down
 
 ```
 autorma/
-├── model-service/       # Each component is self-contained
+├── model_service/       # Each component is self-contained
 │   ├── app.py
 ├── orchestrator/
 │   ├── batch_inference.py
@@ -1215,7 +1215,7 @@ type(scope): description
 
 **Examples:**
 - `feat(orchestrator): Add retry logic for failed batches`
-- `fix(model-service): Correct confidence score calculation`
+- `fix(model_service): Correct confidence score calculation`
 - `docs(readme): Update setup instructions for WSL`
 
 ---

@@ -99,7 +99,7 @@ The system follows a **microservices-inspired architecture** with clear separati
 
 ### 1. Model Service (FastAPI)
 
-**Location:** `model-service/app.py`
+**Location:** `model_service/app.py`
 
 **Purpose:** Stateless HTTP API for model inference
 
@@ -269,7 +269,7 @@ client.set_registered_model_alias("refund-classifier", "production", "1")
 ```yaml
 # prometheus.yml
 scrape_configs:
-  - job_name: 'model-service'
+  - job_name: 'model_service'
     static_configs:
       - targets: ['<WSL_IP>:8000']  # Scrapes /metrics endpoint
     scrape_interval: 15s
@@ -536,9 +536,9 @@ For nightly processing (6-hour window):
 ```python
 # orchestrator/batch_inference.py
 MODEL_SERVICES = [
-    "http://model-service-1:8000",
-    "http://model-service-2:8000",
-    "http://model-service-3:8000"
+    "http://model_service-1:8000",
+    "http://model_service-2:8000",
+    "http://model_service-3:8000"
 ]
 
 # Round-robin across services

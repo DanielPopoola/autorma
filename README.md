@@ -87,7 +87,7 @@ autorma/
 │       ├── output/             # Prediction results
 │       └── checkpoints/        # Recovery checkpoints
 │
-├── model-service/              # FastAPI prediction service
+├── model_service/              # FastAPI prediction service
 │   ├── app.py
 │
 ├── orchestrator/               # Batch inference pipeline
@@ -244,7 +244,7 @@ Access at: http://localhost:5000
 
 ```bash
 # In a new terminal
-cd model-service
+cd model_service
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
