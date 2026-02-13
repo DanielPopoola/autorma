@@ -6,6 +6,8 @@ from pathlib import Path
 
 import requests
 
+from config import get_settings
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -13,11 +15,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_SERVICE_URL = "http://localhost:8000"
+settings = get_settings()
+
+
 INPUT_DIR = Path("data/inference/input")
 OUTPUT_DIR = Path("data/inference/output")
 CHECKPOINT_DIR = Path("data/inference/checkpoints")
-BATCH_SIZE = 10
 
 
 class BatchOrchestrator:
@@ -44,7 +47,7 @@ class BatchOrchestrator:
     def predict_batch(self, image_paths: list[Path]) -> list[dict]:
         try:
             response = requests.post(
-                f"{MODEL_SERVICE_URL}/predict",
+                f"{settings.MODEL_SERVICE_URL}/predict",
                 json={"image_paths": [str(p.absolute()) for p in image_paths]},
                 timeout=30,
             )
@@ -97,7 +100,7 @@ class BatchOrchestrator:
 
         # Check model service health
         try:
-            health = requests.get(f"{MODEL_SERVICE_URL}/health", timeout=5).json()
+            health = requests.get(f"{settings.MODEL_SERVICE_URL}/health", timeout=5).json()
             logger.info(f"Model service: {health}")
         except Exception as e:
             logger.error(f"Model service unavailable: {e}")
@@ -120,8 +123,8 @@ class BatchOrchestrator:
         # Process in batches
         all_results = []
         batches = [
-            unprocessed[i : i + BATCH_SIZE]
-            for i in range(0, len(unprocessed), BATCH_SIZE)
+            unprocessed[i : i + settings.BATCH_SIZE]
+            for i in range(0, len(unprocessed), settings.BATCH_SIZE)
         ]
 
         for batch_num, batch in enumerate(batches, 1):

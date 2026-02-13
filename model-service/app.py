@@ -8,11 +8,15 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 from fastapi.responses import Response
 import time
 
+from config import get_settings
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 model = None
 model_version = None
+
+settings = get_settings()
 
 # Prometheus metrics
 request_count = Counter('api_requests_total', 'Total API requests', ['endpoint', 'status'])
@@ -27,8 +31,7 @@ images_processed = Counter('images_processed_total', 'Total images processed')
 async def lifespan(app: FastAPI):
     global model, model_version
 
-    mlflow_tracking_uri = "http://127.0.0.1:5000"
-    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
 
     try:
         model_uri = "models:/refund-classifier@production"
