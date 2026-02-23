@@ -1,6 +1,6 @@
 # System Architecture
 
-This document provides an in-depth look at the architecture of the Refund Item Classification System, explaining design decisions, component responsibilities, and data flows.
+This document covers the architecture of the Refund Item Classification System — component responsibilities, data flows, and design decisions.
 
 ---
 
@@ -16,81 +16,79 @@ This document provides an in-depth look at the architecture of the Refund Item C
 
 ## Architecture Overview
 
-The system follows a **microservices-inspired architecture** with clear separation of concerns:
+The system follows a microservices-inspired architecture with clear separation of concerns. Core ML services (MLflow, Model Service) run in Docker containers on a shared network. Supporting services (monitoring, UI) are optional but production-ready.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        PRESENTATION LAYER                         │
-│  ┌──────────────────────┐       ┌──────────────────────────┐    │
-│  │   Streamlit UI       │       │   Grafana Dashboard      │    │
-│  │   Port: 8501         │       │   Port: 3000             │    │
-│  │   - Upload images    │       │   - View metrics         │    │
-│  │   - Trigger batches  │       │   - Monitor health       │    │
-│  │   - View results     │       │   - Analyze trends       │    │
-│  └──────────┬───────────┘       └────────────▲─────────────┘    │
-└─────────────┼──────────────────────────────────┼──────────────────┘
-              │                                  │
-              │ Calls orchestrator               │ Queries metrics
-              ▼                                  │
+│                      PRESENTATION LAYER                          │
+│  ┌─────────────────────┐       ┌──────────────────────────┐     │
+│  │   Streamlit UI      │       │   Grafana Dashboard      │     │
+│  │   Port: 8501        │       │   Port: 3000             │     │
+│  │   - Upload images   │       │   - View metrics         │     │
+│  │   - Trigger batches │       │   - Monitor health       │     │
+│  │   - View results    │       │   - Analyse trends       │     │
+│  └──────────┬──────────┘       └────────────▲─────────────┘     │
+└─────────────┼──────────────────────────────────┼─────────────────┘
+              │ HTTP                             │ PromQL
+              ▼                                 │
 ┌──────────────────────────────────────────────────────────────────┐
-│                      APPLICATION LAYER                            │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Batch Orchestrator (Python)                   │  │
-│  │              orchestrator/batch_inference.py               │  │
-│  │                                                            │  │
-│  │  Responsibilities:                                         │  │
-│  │  • Scan input directory for unprocessed images            │  │
-│  │  • Load/save checkpoints for crash recovery               │  │
-│  │  • Split images into mini-batches (10 per batch)          │  │
-│  │  • Call Model Service API for predictions                 │  │
-│  │  • Handle failed images (log for human review)            │  │
-│  │  • Save results to output directory                       │  │
-│  │  • Push metrics to Prometheus Pushgateway                 │  │
-│  │                                                            │  │
-│  └──────────┬───────────────────────────────────┬─────────────┘  │
-│             │                                   │                │
-│             │ HTTP POST /predict                │ Push metrics   │
-│             ▼                                   ▼                │
-│  ┌─────────────────────────┐      ┌─────────────────────────┐   │
-│  │   Model Service API     │      │    Pushgateway          │   │
-│  │   Port: 8000            │      │    Port: 9091           │   │
-│  │   FastAPI + PyTorch     │      │    Metrics sink         │   │
-│  └────────┬────────────────┘      └──────────▲──────────────┘   │
-└───────────┼────────────────────────────────────┼──────────────────┘
-            │                                    │
-            │ Load model                         │ Scrape
-            ▼                                    │
-┌──────────────────────────────────────────────────────────────────┐
-│                         DATA LAYER                                │
-│                                                                   │
-│  ┌──────────────────────┐        ┌──────────────────────────┐   │
-│  │   MLflow Registry    │        │   Prometheus TSDB        │   │
-│  │   Port: 5000         │        │   Port: 9090             │   │
-│  │                      │        │                          │   │
-│  │  • Model versions    │        │  • Time-series metrics   │   │
-│  │  • Experiments       │        │  • Scrape configs        │   │
-│  │  • Artifacts         │        │  • Retention policies    │   │
-│  │  • Metadata          │        │                          │   │
-│  └──────────────────────┘        └──────────────────────────┘   │
-│                                                                   │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              Filesystem Storage                           │   │
-│  │                                                           │   │
-│  │  data/inference/                                          │   │
-│  │    ├── input/       ← New images arrive here             │   │
-│  │    ├── output/      ← Prediction results saved here      │   │
-│  │    └── checkpoints/ ← Recovery state stored here         │   │
-│  └───────────────────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────────────────┘
+│                   APPLICATION LAYER (Docker)                     │
+│   Network: ml-network                                            │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │           Batch Orchestrator                            │    │
+│  │           orchestrator/batch_inference.py               │    │
+│  │           (profile: manual - runs on demand)            │    │
+│  │                                                         │    │
+│  │  - Scans data/inference/input/ for new images          │    │
+│  │  - Batches images, calls Model Service                 │    │
+│  │  - Saves results to data/inference/output/             │    │
+│  │  - Checkpoints progress for crash recovery             │    │
+│  │  - Pushes batch metrics to Pushgateway                 │    │
+│  └────────────────────┬────────────────────────────────────┘    │
+│                       │ HTTP POST /predict                       │
+│                       ▼                                          │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │           Model Service (FastAPI)                       │    │
+│  │           model_service/app.py                          │    │
+│  │           Port: 8000                                    │    │
+│  │                                                         │    │
+│  │  - Loads production model from MLflow on startup       │    │
+│  │  - POST /predict  -- batch image classification        │    │
+│  │  - GET  /health   -- liveness check                    │    │
+│  │  - GET  /metrics  -- Prometheus scrape endpoint        │    │
+│  └────────────────────┬────────────────────────────────────┘    │
+│                       │ mlflow-artifacts:// over HTTP           │
+│                       ▼                                          │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │           MLflow Server                                 │    │
+│  │           Port: 5000                                    │    │
+│  │                                                         │    │
+│  │  - Backend store: SQLite (mlflow_data/mlflow.db)       │    │
+│  │  - Artifact proxy: --serve-artifacts                   │    │
+│  │  - Artifact destination: /mlflow_data/artifacts        │    │
+│  │  - Model Registry: refund-classifier                   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌──────────────────────┐  ┌──────────────────────────────┐    │
+│  │  Filesystem Storage  │  │  Prometheus + Pushgateway    │    │
+│  │                      │  │  Ports: 9090 / 9091          │    │
+│  │  data/inference/     │  │                              │    │
+│  │  ├── input/          │  │  Scrapes: model-service:8000 │    │
+│  │  ├── output/         │  │  Receives: orchestrator push │    │
+│  │  └── checkpoints/    │  │                              │    │
+│  │                      │  │  Feeds into Grafana          │    │
+│  │  mlflow_data/        │  │                              │    │
+│  │  ├── mlflow.db       │  │                              │    │
+│  │  └── artifacts/      │  │                              │    │
+│  └──────────────────────┘  └──────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
-│                      SCHEDULING LAYER                             │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │   Cron (2 AM daily)                                        │  │
-│  │   └─> python orchestrator/batch_inference.py              │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────┘
+│                      SCHEDULING LAYER                            │
+│   cron (2 AM daily) -> docker compose --profile manual run      │
+│                         orchestrator                             │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -101,200 +99,122 @@ The system follows a **microservices-inspired architecture** with clear separati
 
 **Location:** `model_service/app.py`
 
-**Purpose:** Stateless HTTP API for model inference
-
-**Key Features:**
-- Loads production model from MLflow Registry on startup
-- Exposes `/predict` endpoint for batch predictions
-- Exposes `/metrics` endpoint for Prometheus scraping
-- Exposes `/health` endpoint for status checks
+**Purpose:** Stateless HTTP inference API. Loads the production model from MLflow at startup and serves it for the lifetime of the container.
 
 **API Contract:**
 
-```python
-# Request
+```
 POST /predict
-{
-  "image_paths": ["/absolute/path/to/img1.jpg", "/absolute/path/to/img2.jpg"]
-}
+Request:  { "image_paths": ["/data/inference/input/img1.jpg"] }
+Response: { "predictions": [{ "predicted_class": "shirts",
+                               "confidence": 0.98,
+                               "all_probabilities": {...} }],
+            "model_version": "production" }
 
-# Response
-{
-  "predictions": [
-    {
-      "predicted_class": "shirts",
-      "confidence": 0.98,
-      "all_probabilities": {
-        "shirts": 0.98,
-        "tops": 0.01,
-        "casual shoes": 0.005,
-        "handbags": 0.003,
-        "watches": 0.002
-      }
-    }
-  ],
-  "model_version": "production"
-}
+GET /health  ->  { "status": "healthy", "model_loaded": true, "model_version": "production" }
+GET /metrics ->  Prometheus text format
 ```
 
-**Metrics Exposed:**
-- `api_requests_total{endpoint, status}` - Counter of requests
-- `api_request_duration_seconds{endpoint}` - Histogram of latencies
-- `prediction_confidence` - Histogram of confidence scores
-- `predictions_by_class_total{class_name}` - Counter per class
-- `model_loaded` - Gauge (0 or 1)
-- `images_processed_total` - Counter of total images
+**Startup sequence:**
+1. Set `MLFLOW_TRACKING_URI` to `http://mlflow:5000`
+2. Load `models:/refund-classifier@production` via MLflow proxy
+3. If production alias missing, fall back to `@latest`
+4. Serve requests
 
-**Lifecycle:**
-1. Startup: Load model from MLflow
-2. Runtime: Serve predictions, expose metrics
-3. Shutdown: Clean up resources (handled by FastAPI)
+**Metrics exposed:**
 
-**Why FastAPI?**
-- Async support (though not critical for batch use case)
-- Automatic OpenAPI docs
-- Type validation with Pydantic
-- Easy Prometheus integration
-- Production-ready ASGI server (Uvicorn)
+| Metric | Type | Description |
+|---|---|---|
+| `api_requests_total{endpoint,status}` | Counter | All requests |
+| `api_request_duration_seconds` | Histogram | Latency per endpoint |
+| `prediction_confidence` | Histogram | Confidence scores |
+| `predictions_by_class_total{class_name}` | Counter | Per-class counts |
+| `model_loaded` | Gauge | 1 if model loaded |
+| `images_processed_total` | Counter | Cumulative images |
 
 ---
 
-### 2. Batch Orchestrator
+### 2. MLflow Server
+
+**Location:** `mlflow.Dockerfile`
+
+**Purpose:** Model registry, experiment tracking, and artifact proxy.
+
+**Critical configuration:**
+
+```bash
+mlflow server \
+  --backend-store-uri sqlite:////mlflow_data/mlflow.db \
+  --artifacts-destination file:///mlflow_data/artifacts \
+  --serve-artifacts \
+  --host 0.0.0.0 \
+  --port 5000
+```
+
+The `--serve-artifacts` flag is non-negotiable for Docker deployments. Without it, MLflow returns raw `file://` URIs pointing to wherever the artifact was originally logged. Containers on the `ml-network` resolve artifacts via `mlflow-artifacts://` URIs over HTTP through the MLflow server — they never need direct filesystem access to `mlflow_data/artifacts/`. The volume is mounted only for persistence.
+
+**Model aliasing workflow:**
+
+```
+Register version -> set alias "production" -> model-service loads @production on startup
+                                           -> rollback: reassign alias to older version -> restart service
+```
+
+---
+
+### 3. Batch Orchestrator
 
 **Location:** `orchestrator/batch_inference.py`
 
-**Purpose:** Coordinate batch processing workflow
+**Purpose:** Scheduled batch job. Scans the input directory, classifies images in batches via the Model Service, writes results to JSON, checkpoints progress.
 
 **Algorithm:**
 
-```python
-1. Load checkpoint (what's been processed)
-2. Scan input directory for new images
+```
+1. Load checkpoint (set of already-processed image paths)
+2. Scan data/inference/input/ for .jpg/.png files
 3. Filter out already-processed images
-4. Split into mini-batches of 10
-5. For each batch:
-   a. Call Model Service /predict endpoint
-   b. Save predictions
-   c. Update checkpoint
-   d. Handle errors (log failed images)
-6. Push metrics to Prometheus Pushgateway
-7. Save final results JSON
+4. If none: exit cleanly
+5. Split remainder into batches of N
+6. For each batch:
+   a. POST image paths to Model Service /predict
+   b. Append results to output JSON
+   c. Write updated checkpoint (atomic)
+7. Push batch metrics to Pushgateway
 ```
 
-**Checkpoint Structure:**
+Runs as a Docker container with `--profile manual` — only starts when explicitly invoked and exits after one pass. No persistent process.
 
-```json
-{
-  "processed_images": ["img1.jpg", "img2.jpg", ...],
-  "last_run": "2024-02-12T02:15:33Z"
-}
-```
-
-**Error Handling:**
-- Corrupted images → Logged to `failed_images` array
-- Model Service down → Entire batch fails, checkpoint not updated
-- Partial batch failure → Successful images saved, failed ones logged
-
-**Why Checkpointing?**
-- **Crash Recovery:** If orchestrator crashes mid-run, can resume
-- **Idempotency:** Running twice doesn't duplicate work
-- **Debugging:** Can see exactly what's been processed
-
-**Why Mini-Batches of 10?**
-- GPU efficiency (batch inference faster than single)
-- Checkpoint granularity (don't lose too much progress on crash)
-- Manageable error scope (corruption affects ≤10 images)
-
----
-
-### 3. MLflow Registry
-
-**Location:** `mlflow_data/`
-
-**Purpose:** Model versioning and experiment tracking
-
-**Key Concepts:**
-
-**Model Versions:**
-```
-refund-classifier
-├── Version 1 (alias: production)
-├── Version 2 (alias: staging)
-└── Version 3 (no alias)
-```
-
-**Aliases vs Stages:**
-- Old MLflow: Used "stages" (Production, Staging, Archived)
-- New MLflow: Uses "aliases" (more flexible, custom names)
-- This project uses aliases: `production`, `staging`
-
-**Model Loading:**
-```python
-# Model Service loads via alias
-model_uri = "models:/refund-classifier/production"
-model = mlflow.pyfunc.load_model(model_uri)
-```
-
-**Promotion Workflow:**
-1. Train new model (v3)
-2. Register in MLflow
-3. Set `staging` alias for testing
-4. If good, set `production` alias
-5. Model Service restart picks up new version
-
-**Rollback:**
-```python
-# Point production alias back to v1
-client.set_registered_model_alias("refund-classifier", "production", "1")
-```
+**Volumes mounted:**
+- `./data/inference` -> `/data/inference` (input images and output results)
+- `./logs` -> `/app/logs`
 
 ---
 
 ### 4. Monitoring Stack
 
-**Components:**
-- **Prometheus:** Time-series database, scrapes metrics
-- **Pushgateway:** Accepts pushed metrics from batch jobs
-- **Grafana:** Visualization and dashboards
+**Location:** `monitoring/docker-compose.yml`
 
-**Why Prometheus + Grafana?**
-- **Industry Standard:** Most companies use this stack
-- **Pull Model:** Prometheus scrapes targets (Model Service)
-- **Push Model:** Batch jobs push to Pushgateway
-- **Flexible Queries:** PromQL for complex aggregations
-- **Alerting Ready:** Can add alerts on thresholds
+**Components:** Prometheus (scrapes model-service), Pushgateway (receives orchestrator metrics), Grafana (dashboards).
 
-**Scrape Configs:**
+The monitoring stack runs separately from the core ML stack and is optional for local development.
+
+**Prometheus scrape config:**
 
 ```yaml
-# prometheus.yml
 scrape_configs:
   - job_name: 'model_service'
     static_configs:
-      - targets: ['<WSL_IP>:8000']  # Scrapes /metrics endpoint
+      - targets: ['model-service:8000']
     scrape_interval: 15s
-  
+
   - job_name: 'pushgateway'
     static_configs:
-      - targets: ['pushgateway:9091']  # Scrapes pushed metrics
+      - targets: ['pushgateway:9091']
     scrape_interval: 15s
 ```
 
-**Key Metrics Queries:**
-
-```promql
-# Request rate per endpoint
-rate(api_requests_total[5m])
-
-# 95th percentile latency
-histogram_quantile(0.95, rate(api_request_duration_seconds_bucket[5m]))
-
-# Batch success rate
-batch_success_rate
-
-# Predictions distribution
-predictions_by_class_total
-```
+> If running Prometheus outside the `ml-network`, use `host.docker.internal:8000` or the WSL IP instead of `model-service:8000`.
 
 ---
 
@@ -302,442 +222,131 @@ predictions_by_class_total
 
 **Location:** `streamlit-ui/app.py`
 
-**Purpose:** User-friendly interface for manual batch processing
-
-**Pages:**
-
-**Tab 1: Upload & Classify**
-- Multi-file uploader
-- Image preview grid
-- "Run Classification" button (calls orchestrator as subprocess)
-- Results table with confidence scores
-- CSV download
-
-**Tab 2: Results History**
-- Dropdown to select past batch runs
-- Metrics summary (total, success, failed, duration)
-- Class distribution bar chart
-- Detailed results table
-
-**Tab 3: About**
-- System architecture explanation
-- Model performance stats
-- Workflow description
-
-**Why Streamlit?**
-- Pure Python (no frontend code)
-- Perfect for ML demos
-- Built-in components (file upload, charts, tables)
-- Fast iteration
-
-**Integration:**
-- Saves uploaded files to `data/inference/input/`
-- Calls orchestrator via `subprocess.run()`
-- Reads results from `data/inference/output/`
-- Shows system status via Model Service `/health` endpoint
+**Purpose:** User-friendly interface for manual batch processing and results review. Runs on the host, not in Docker — it's a dev/demo tool only.
 
 ---
 
 ## Data Flow
 
-### Nightly Batch Processing Flow
+### Batch inference (primary flow)
 
 ```
-2:00 AM - Cron triggers
-     │
-     ├─> Orchestrator starts
-     │
-     ├─> Load checkpoint.json
-     │   └─> Already processed: 500 images
-     │
-     ├─> Scan data/inference/input/
-     │   └─> Found: 50 new images
-     │
-     ├─> Filter: 50 - 0 = 50 to process
-     │
-     ├─> Split into batches: [10, 10, 10, 10, 10]
-     │
-     ├─> Batch 1 (images 1-10)
-     │   ├─> POST /predict to Model Service
-     │   ├─> Model Service:
-     │   │   ├─> Load images
-     │   │   ├─> Preprocess (resize, normalize)
-     │   │   ├─> Forward pass through EfficientNet-B0
-     │   │   ├─> Softmax → probabilities
-     │   │   └─> Return predictions
-     │   ├─> Orchestrator receives predictions
-     │   ├─> Save to results array
-     │   └─> Update checkpoint (now 510 processed)
-     │
-     ├─> Batch 2 (images 11-20)
-     │   └─> ... repeat ...
-     │
-     ├─> ... Batches 3-5 ...
-     │
-     ├─> All batches complete
-     │
-     ├─> Push metrics to Pushgateway
-     │   ├─> batch_duration_seconds: 5.2
-     │   ├─> batch_images_processed: 50
-     │   ├─> batch_success_rate: 1.0
-     │   └─> predictions_class_shirts: 12
-     │
-     ├─> Save results to output/predictions_20240212_020533.json
-     │
-     └─> Orchestrator exits (exit code 0)
-
-2:05 AM - Batch complete
+[cron / manual trigger]
+        |
+        v
+  Orchestrator container starts
+        |
+        |-- reads checkpoint
+        |-- scans data/inference/input/
+        |-- filters processed images
+        |
+        v
+  POST /predict to model-service:8000
+  { "image_paths": ["/data/inference/input/img1.jpg", ...] }
+        |
+        v
+  Model Service
+  |-- loads image from shared volume
+  |-- runs EfficientNet-B0 inference
+  `-- returns predictions + confidence scores
+        |
+        v
+  Orchestrator writes results JSON
+  -> data/inference/output/predictions_<timestamp>.json
+  -> updates checkpoint
+  -> pushes metrics to Pushgateway
+        |
+        v
+  Prometheus scrapes Pushgateway -> Grafana displays batch metrics
 ```
 
-### Manual Processing Flow (via UI)
+### Model load flow (on model-service startup)
 
 ```
-User opens Streamlit UI
-     │
-     ├─> Upload 20 images via file uploader
-     │
-     ├─> Click "Run Classification"
-     │
-     ├─> Streamlit:
-     │   ├─> Save uploaded files to data/inference/input/
-     │   └─> subprocess.run("python orchestrator/batch_inference.py")
-     │
-     ├─> Orchestrator runs (same flow as nightly)
-     │
-     ├─> Results saved to output/predictions_*.json
-     │
-     ├─> Streamlit:
-     │   ├─> Read latest results file
-     │   ├─> Display results table
-     │   └─> Offer CSV download
-     │
-     └─> User downloads results
+model-service starts
+  |
+  |-- sets MLFLOW_TRACKING_URI=http://mlflow:5000
+  |-- requests models:/refund-classifier@production
+  |
+  v
+MLflow server
+  |-- resolves alias -> version number
+  |-- looks up artifact URI -> mlflow-artifacts:/1/models/.../
+  `-- streams artifact files back over HTTP
+  |
+  v
+model-service loads model into memory -> ready to serve /predict
 ```
+
+This proxy flow is why `--serve-artifacts` is required. Without it, MLflow returns a `file://` URI and the client tries to read from disk directly — which fails inside any container that doesn't mount `mlflow_data/artifacts` at the exact recorded path.
 
 ---
 
 ## Design Decisions
 
-### Why Batch Processing Instead of Real-Time?
+### Why Docker for core services?
 
-**Business Context:**
-- Returns arrive throughout the day
-- Classification results needed by next morning
-- No real-time decision required
+The original setup ran MLflow and the Model Service as local processes. This caused a critical artifact path bug: when `register_model.py` ran on the host, MLflow recorded artifact locations as absolute host paths (`/home/user/autorma/mlflow_data/...`). Any container mounting the same directory sees it at a different path, so model loading fails.
 
-**Benefits:**
-- **Cost:** Process during off-peak hours
-- **Efficiency:** Batch GPU inference is faster
-- **Simplicity:** No streaming infrastructure needed
-- **Resource Optimization:** Can use cheaper CPU for orchestrator, GPU only for model
+Running MLflow in Docker with `--serve-artifacts` solves this permanently: artifact URIs are recorded as `mlflow-artifacts://...` and resolved by the MLflow server over HTTP, making them location-independent.
 
-**Trade-offs:**
-- Latency: Results not immediate (acceptable for this use case)
-- Complexity: Need checkpoint mechanism
+**The key rule:** artifact URIs are immutable once written. They are recorded at log time, not serve time. Server config changes only affect new experiments. This is why adding `--serve-artifacts` to an existing MLflow instance doesn't fix old registered models — you must delete the old experiment and re-register.
 
-### Why Separate Model Service?
+### Why `--serve-artifacts` and not `--default-artifact-root`?
 
-**Alternative:** Monolithic script that loads model and processes images
+`--default-artifact-root` sets where new artifacts are stored but still returns `file://` URIs to clients. The client then tries to access the artifact directly from disk. `--serve-artifacts` with `--artifacts-destination` makes the server own the entire download path — clients always go through HTTP, never touching the filesystem directly.
 
-**Why Separate:**
+### Why batch processing over real-time?
 
-| Aspect | Monolithic | Separate Service |
-|--------|------------|------------------|
-| **Testing** | Must run full pipeline | Can test model in isolation |
-| **Deployment** | Change orchestrator → reload model | Update independently |
-| **Technology** | Locked into Python | Could rewrite orchestrator in Go |
-| **Scaling** | Scale everything together | Scale model service separately |
-| **Development** | Tight coupling | Clear API contract |
+Returns arrive throughout the day; classification results are only needed by the next morning. Batch processing means simpler infrastructure (no streaming, no always-on GPU), cheaper operation, and natural idempotency via checkpointing.
 
-**When Monolithic Might Be Better:**
-- Very small scale (< 100 images/day)
-- No plans to evolve system
-- Single developer, no team
+### Why separate Model Service from Orchestrator?
+
+| Concern | Monolith | Separate service |
+|---|---|---|
+| Testing | Full pipeline required | Model testable in isolation |
+| Deployment | Change one, restart all | Update independently |
+| Scaling | Scale everything together | Scale model service only |
+| Technology | Locked in | Orchestrator could be any language |
 
 ### Why MLflow?
 
-**Alternatives:**
-- Manual versioning (save models with timestamps)
-- Git LFS for model files
-- Custom model registry
-
-**Why MLflow:**
-- **Experiment Tracking:** Log hyperparameters, metrics
-- **Reproducibility:** Can recreate any experiment
-- **Versioning:** Built-in model registry
-- **Promotion Workflow:** Staging → Production
-- **Easy Rollback:** Change alias, restart service
-- **Team Collaboration:** Shared experiment database
-
-**MLflow Overhead:**
-- Running server (always-on process)
-- Learning curve for team
-- SQLite bottleneck (at scale, use PostgreSQL)
-
-### Why Filesystem Storage?
-
-**Alternatives:**
-- S3/Object storage
-- Database (PostgreSQL)
-- Message queue (Kafka)
-
-**Why Filesystem:**
-- **Simplicity:** No external dependencies
-- **Debugging:** Easy to inspect files
-- **Cost:** No cloud costs
-- **Performance:** Local disk is fast
-
-**When to Switch:**
-- **S3:** When deploying to cloud
-- **Database:** When need transactional guarantees
-- **Message Queue:** When moving to streaming
+MLflow's model registry with alias-based promotion (`@production`, `@latest`) gives a clean rollback story: reassign an alias, restart the service. No code changes required. `--serve-artifacts` makes this work correctly across container boundaries.
 
 ---
 
 ## Scalability Considerations
 
-### Current System Capacity
+### Current capacity
 
-**Constraints:**
-- Single Model Service instance (CPU-only)
-- Sequential batch processing
-- Local filesystem storage
+Single CPU-only Model Service instance. Estimated throughput: ~10 images/batch, ~1s/batch -> ~36,000 images/hour. For a 6-hour nightly window that is ~216,000 images — far beyond current requirements.
 
-**Estimated Throughput:**
-- ~10 images per batch
-- ~1 second per batch (CPU inference)
-- ~3600 batches/hour
-- **~36,000 images/hour**
+### When and how to scale
 
-For nightly processing (6-hour window):
-- **~216,000 images/night**
+**Vertical:** More RAM allows larger batch sizes. A GPU gives 10-100x faster inference with no code changes.
 
-### Scaling Strategies
+**Horizontal:** Run multiple model-service replicas behind a load balancer. The orchestrator round-robins across service URLs. MLflow server and filesystem storage remain shared state.
 
-#### 1. Vertical Scaling (Upgrade Hardware)
+**Cloud migration:** S3 replaces the local artifact volume. Point `--artifacts-destination` at `s3://bucket/mlflow-artifacts`. SageMaker or Cloud Run replaces the model-service container. Everything else stays the same.
 
-**Current:** 8GB RAM, Core i5 CPU
-
-**Upgrade:**
-- 16GB RAM → Larger batch sizes (20-30 images)
-- GPU (even low-end) → 10-100x faster inference
-- SSD → Faster image loading
-
-**Expected Improvement:** 5-10x throughput
-
-#### 2. Horizontal Scaling (Add More Instances)
-
-**Strategy:**
-- Run multiple Model Service instances
-- Load balancer in front (or round-robin in orchestrator)
-- Partition input directory (orchestrator-1 processes `/input/part1/`, orchestrator-2 processes `/input/part2/`)
-
-**Changes Needed:**
-```python
-# orchestrator/batch_inference.py
-MODEL_SERVICES = [
-    "http://model_service-1:8000",
-    "http://model_service-2:8000",
-    "http://model_service-3:8000"
-]
-
-# Round-robin across services
-service_url = MODEL_SERVICES[batch_num % len(MODEL_SERVICES)]
-```
-
-**Expected Improvement:** Linear with number of instances (3 instances = 3x throughput)
-
-#### 3. Distributed Processing (Message Queue)
-
-**Current:** Orchestrator directly calls Model Service
-
-**With Queue:**
-```
-Orchestrator → RabbitMQ/Redis Queue → Worker Pool → Model Service
-```
-
-**Benefits:**
-- Decouple submission from processing
-- Workers pull tasks at their own pace
-- Better fault tolerance (queue persists tasks)
-- Dynamic scaling (add/remove workers)
-
-**Tools:**
-- Celery + Redis
-- RabbitMQ
-- AWS SQS
-
-#### 4. Cloud Deployment
-
-**Current:** Runs on single machine (WSL)
-
-**Cloud Architecture:**
-```
-S3 (images) → Lambda (orchestrator) → SageMaker (model) → DynamoDB (results)
-```
-
-**Benefits:**
-- Auto-scaling
-- Pay per use
-- Managed services (no ops)
-
-**Costs:**
-- SageMaker inference: ~$0.05/hour (CPU)
-- Lambda: ~$0.20/million requests
-- S3: ~$0.023/GB/month
-
-### When to Scale?
-
-**Current System Handles:**
-- 50-500 images/night comfortably
-- <5 second batch processing time
-
-**Scale When:**
-- Processing time > batch window (can't finish overnight)
-- Manual intervention needed for failures
-- Metrics show degraded performance
-- Business growth demands it
-
-**Golden Rule:** Don't scale prematurely. Current architecture can handle 10x growth before changes needed.
+Don't scale prematurely. The current architecture handles 10x current load without changes.
 
 ---
 
-## Security Considerations
+## Future Improvements
 
-### Current Security Posture
+**Near-term:**
+- Data drift detection — monitor input image statistics, alert on distribution shift
+- Retry logic in the orchestrator for transient Model Service failures
+- Model quantization (INT8) for faster CPU inference
 
-**Implemented:**
-- Model Service only accepts local filesystem paths (no arbitrary URLs)
-- Checkpoints prevent duplicate processing
-- Failed images logged (no silent failures)
-
-**Not Implemented (Future):**
-- Authentication on Model Service API
-- Encryption of model files
-- Input validation (malicious images)
-- Rate limiting
-- HTTPS/TLS
-
-### Production Security Checklist
-
-- [ ] Add API key authentication to Model Service
-- [ ] Validate image file signatures (prevent malicious uploads)
-- [ ] Run Model Service as non-root user
-- [ ] Enable HTTPS with valid certificates
-- [ ] Implement rate limiting (prevent DoS)
-- [ ] Encrypt MLflow database
-- [ ] Add audit logging (who accessed what)
-- [ ] Scan uploaded images for malware
-- [ ] Implement CORS policies
-- [ ] Use secrets management (not hardcoded credentials)
-
----
-
-## Disaster Recovery
-
-### Failure Scenarios & Mitigation
-
-| Failure | Impact | Recovery |
-|---------|--------|----------|
-| **Model Service crashes** | Batch run fails | Checkpoint allows resume; restart service |
-| **Orchestrator crashes mid-batch** | Partial processing | Next run loads checkpoint, continues |
-| **Corrupted image in batch** | Batch fails | Error logged, remaining images processed |
-| **MLflow server down** | Model Service can't start | Keep last-known-good model cached |
-| **Disk full** | Can't save results | Monitor disk space, auto-cleanup old results |
-| **Prometheus down** | No metrics | System continues, just no monitoring |
-
-### Backup Strategy
-
-**Critical Data:**
-- MLflow database (`mlflow_data/mlflow.db`)
-- Model checkpoints (`models/v*/`)
-- Training metadata
-- Configuration files
-
-**Backup Plan:**
-- Daily backup of MLflow DB to S3/external storage
-- Model files versioned in Git LFS (or artifact store)
-- Configuration in version control
-- Results archived after 30 days
-
----
-
-## Monitoring & Alerting
-
-### Key Metrics to Alert On
-
-| Metric | Threshold | Action |
-|--------|-----------|--------|
-| `batch_success_rate` | < 0.95 | Investigate failed images |
-| `batch_duration_seconds` | > 600 | Check Model Service health |
-| `model_loaded` | == 0 | Restart Model Service |
-| `api_request_duration_seconds` (p95) | > 5s | Check resource usage |
-| Disk space | < 10% free | Clean old results |
-
-### Grafana Alerting (Future)
-
-```yaml
-# Example alert rule
-- alert: BatchSuccessRateLow
-  expr: batch_success_rate < 0.95
-  for: 5m
-  annotations:
-    summary: "Batch processing success rate dropped below 95%"
-    description: "Last batch had {{ $value }}% success rate"
-```
-
----
-
-## Future Enhancements
-
-### Short-Term (Next 3-6 Months)
-
-1. **Dockerize All Services**
-   - Model Service → Docker image
-   - Orchestrator → Scheduled container
-   - Single `docker-compose up` to start everything
-
-2. **Add Data Drift Detection**
-   - Monitor input image statistics
-   - Alert if distribution shifts significantly
-   - Automatic model retraining trigger
-
-3. **Improve Error Handling**
-   - Retry logic for transient failures
-   - Circuit breaker for Model Service
-   - Dead letter queue for permanently failed images
-
-4. **Performance Optimization**
-   - Model quantization (INT8) for faster CPU inference
-   - Dynamic batching based on input size
-   - Caching for repeated images
-
-### Long-Term (6-12 Months)
-
-1. **Cloud Migration**
-   - AWS: S3 + Lambda + SageMaker
-   - GCP: Cloud Storage + Cloud Run + Vertex AI
-   - Azure: Blob Storage + Functions + ML Studio
-
-2. **Active Learning**
-   - Flag low-confidence predictions for human review
-   - Use human labels to retrain model
-   - Continuous improvement loop
-
-3. **Multi-Model Support**
-   - Run multiple specialized models
-   - Ensemble predictions
-   - A/B testing of model versions
-
-4. **Real-Time Processing**
-   - Add streaming endpoint for urgent returns
-   - Keep batch processing for bulk
-   - Hybrid architecture
+**Long-term:**
+- Cloud deployment (S3 + ECS or Cloud Run)
+- Active learning loop — low-confidence predictions flagged for human review, used to retrain
+- A/B testing via traffic splitting at the Model Service
 
 ---
 
 ## Conclusion
 
-This architecture prioritizes **simplicity**, **maintainability**, and **production-readiness** over premature optimization. Each component has a clear responsibility, components communicate via well-defined interfaces, and the system is designed to scale when needed.
-
-The key insight: **Build for current requirements, design for future growth.** The clean boundaries (orchestrator ↔ model service, MLflow registry, monitoring) make it easy to swap components or scale pieces independently when business needs change.
+This architecture prioritises simplicity and correctness over premature optimisation. Each component has one clear responsibility. The Docker network (`ml-network`) provides service discovery without manual IP management. The `--serve-artifacts` flag on the MLflow server is the keystone that makes artifact resolution work correctly across all container boundaries.

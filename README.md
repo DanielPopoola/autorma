@@ -1,267 +1,110 @@
-# Refund Item Classification System
+# Autorma — Automated Refund Item Classification
 
-An end-to-end machine learning system for automated classification of returned items in an e-commerce warehouse. Built with production-grade MLOps practices including model versioning, batch inference pipelines, monitoring, and a user-friendly interface.
-
-## 🎯 Project Overview
-
-This system demonstrates a complete ML deployment workflow that goes beyond model training to include:
-- Automated batch inference pipeline with checkpoint recovery
-- Model versioning and registry with MLflow
-- Production monitoring with Prometheus and Grafana
-- RESTful model serving with FastAPI
-- Interactive UI for manual batch processing
-- Scheduled automation via cron jobs
-
-**Key Metrics:**
-- Model Accuracy: 96.53% on test set
-- Processing Speed: ~5 seconds per batch (10 images)
-- Categories: 5 (Casual Shoes, Handbags, Shirts, Tops, Watches)
-- Total Dataset: 2,500 images
+An end-to-end MLOps system for classifying returned e-commerce items using computer vision. Built with production-grade practices: model versioning, containerised services, batch inference, and real-time monitoring.
 
 ---
 
-## 🏗️ System Architecture
+## Table of Contents
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      User Interfaces                         │
-│  ┌──────────────────┐         ┌─────────────────────┐      │
-│  │  Streamlit UI    │         │  Grafana Dashboard  │      │
-│  │  (Manual Upload) │         │  (Monitoring)       │      │
-│  └────────┬─────────┘         └──────────▲──────────┘      │
-└───────────┼────────────────────────────────┼─────────────────┘
-            │                                │
-            ▼                                │
-┌─────────────────────────────────────────────────────────────┐
-│                  Orchestration Layer                         │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Batch Orchestrator (Python Script)                  │   │
-│  │  - Scans input directory for new images              │   │
-│  │  - Manages checkpoints for recovery                  │   │
-│  │  - Calls Model Service API                           │   │
-│  │  - Saves results and updates metrics                 │   │
-│  └────────┬───────────────────────────────────┬─────────┘   │
-└───────────┼───────────────────────────────────┼─────────────┘
-            │                                   │
-            │ HTTP POST /predict                │ Metrics
-            ▼                                   ▼
-┌──────────────────────────┐      ┌──────────────────────────┐
-│   Model Service (API)    │      │   Prometheus + Pushgateway│
-│  ┌────────────────────┐  │      │  - Scrapes /metrics      │
-│  │  FastAPI Server    │  │      │  - Stores time series    │
-│  │  ┌──────────────┐  │  │      │  - Feeds Grafana         │
-│  │  │ EfficientNet │  │  │      └──────────────────────────┘
-│  │  │ B0 Model     │  │  │
-│  │  └──────────────┘  │  │
-│  └────────────────────┘  │
-│         ▲                │
-└─────────┼────────────────┘
-          │ Load model
-          │
-┌─────────┴────────────────┐
-│   MLflow Registry        │
-│  - Model versioning      │
-│  - Experiment tracking   │
-│  - Production/Staging    │
-└──────────────────────────┘
-
-Scheduled Automation:
-  Cron (2 AM daily) → Batch Orchestrator → Process overnight returns
-```
-
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed system design.
+1. [System Overview](#system-overview)
+2. [Asset Management](#asset-management)
+3. [Quick Start](#quick-start)
+4. [Running Batch Jobs](#running-batch-jobs)
+5. [Monitoring](#monitoring)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
-## 📁 Project Structure
+## System Overview
 
-```
-autorma/
-├── data/
-│   ├── processed/              # Training/val/test datasets
-│   │   ├── train/
-│   │   ├── val/
-│   │   └── test/
-│   └── inference/              # Batch processing data
-│       ├── input/              # New images to classify
-│       ├── output/             # Prediction results
-│       └── checkpoints/        # Recovery checkpoints
-│
-├── model_service/              # FastAPI prediction service
-│   ├── app.py
-│
-├── orchestrator/               # Batch inference pipeline
-│   ├── batch_inference.py
-│   ├── metrics_pusher.py
-│
-├── streamlit-ui/               # Web interface
-│   ├── app.py
-│
-├── monitoring/                 # Prometheus + Grafana
-│   ├── docker-compose.yml
-│   └── prometheus.yml
-│
-├── mlflow_data/                # MLflow artifacts and metadata
-│   ├── artifacts/
-│   └── mlflow.db
-│
-├── models/                     # Trained model checkpoints
-│   └── v1/
-│       ├── best_model.pth
-│       └── training_metadata.json
-│
-├── scripts/                    # Utility scripts
-│   ├── register_model.py
-│   └── set_production.py
-│
-├── notebooks/               # Training notebooks
-|  ├── 01_data_prepartion.ipynb
-│  └── 02_train_model.ipynb
-│
-├── logs/                       # Application logs
-│
-├── README.md
-├── docs/
-└── requirements.txt
-```
+| Service | Purpose | Port |
+|---|---|---|
+| MLflow | Model registry & experiment tracking | 5000 |
+| Model Service | FastAPI inference API | 8000 |
+| Orchestrator | Batch inference runner | — |
+| Prometheus | Metrics collection | 9090 |
+| Pushgateway | Batch metrics ingestion | 9091 |
+| Grafana | Dashboards | 3000 |
+| Streamlit UI | Manual batch interface | 8501 |
+
+**Model:** EfficientNet-B0 fine-tuned on 5 return categories — Shirts, Watches, Casual Shoes, Tops, Handbags. Test accuracy: **96.53%**
 
 ---
 
-## 📦 Asset Management
+## Asset Management
 
-**Important:** Due to file sizes, the following assets are **not included** in the Git repository and must be downloaded separately.
+The following files are not in Git and must be downloaded before running the system:
 
-| Asset | Size | Location | Download Link | Required? |
-|-------|------|----------|---------------|-----------|
-| Training Dataset | ~1GB | `data/processed/` | [Google Drive - Dataset](https://drive.google.com/drive/folders/1g1V4I3WL8FfXLZfkXqrTYcCR8etojiBY?usp=drive_link) | ✅ Yes |
-| Trained Model v1 | ~50MB | `models/v1/` | [Google Drive - Model](https://drive.google.com/drive/folders/1IQ4wyuTYO0TuQvKg0bIZ3n1kTZQpuvtp?usp=drive_link) | ✅ Yes |
-| MLflow Database | Variable | `mlflow_data/` | Auto-created on first run | ⚠️ Auto |
-| Sample Results | <1MB | `data/inference/output/` | Optional (generated during use) | ❌ No |
+| Asset | Size | Location | Download | Required |
+|---|---|---|---|---|
+| Training Dataset | ~1GB | `data/processed/` | [Google Drive](https://drive.google.com/drive/folders/1g1V4I3WL8FfXLZfkXqrTYcCR8etojiBY?usp=drive_link) | Yes |
+| Trained Model v1 | ~50MB | `models/v1/` | [Google Drive](https://drive.google.com/drive/folders/1IQ4wyuTYO0TuQvKg0bIZ3n1kTZQpuvtp?usp=drive_link) | Yes |
 
-📘 **For detailed download instructions and troubleshooting, see [ASSETS.md](docs/ASSETS.md)**
-
-### First-Time Setup Checklist
-
-Before running the system, ensure you have:
-
-- [ ] Downloaded and extracted **dataset.zip** to `data/processed/`
-- [ ] Downloaded and extracted **model_v1.zip** to `models/v1/`
-- [ ] Verified directory structure (see below)
-
-**Verify Setup:**
-```bash
-# Check dataset structure
-tree data/processed -L 2
-
-# Expected output:
-# data/processed/
-# ├── train/
-# │   ├── casual shoes/
-# │   ├── handbags/
-# │   ├── shirts/
-# │   ├── tops/
-# │   └── watches/
-# ├── val/
-# │   └── (same structure)
-# ├── test/
-# │   └── (same structure)
-# └── dataset_info.json
-
-# Check model exists
-ls -lh models/v1/
-
-# Expected output:
-# best_model.pth
-# training_metadata.json
-```
-
-**Alternative: Use Setup Script**
-
-```bash
-# Run automated setup (downloads from configured links)
-./scripts/setup_assets.sh
-
-# Follow prompts to download missing files
-```
+See [docs/ASSETS.md](docs/ASSETS.md) for detailed download and verification instructions.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
+- Docker & Docker Compose
+- Python 3.12+ with [uv](https://docs.astral.sh/uv/)
 - 8GB RAM minimum
-- Docker & Docker Compose (for monitoring)
-- WSL2 (if on Windows)
-- uv (https://docs.astral.sh/uv/)
-- **Downloaded assets** (see Asset Management section above)
+- Downloaded assets (see above)
 
-### 1. Clone and Setup
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/DanielPopoola/autorma.git
 cd autorma
-
-# Verify you've downloaded required assets
-ls data/processed/train  # Should show category folders
-ls models/v1/            # Should show .pth and .json files
-
-
-# Install dependencies with uv (recommended)
 uv sync
-
-# Alternative: Generate requirements.txt for pip users
-uv pip compile pyproject.toml -o requirements.txt
-pip install -r requirements.txt
 ```
 
-### 2. Register Model in MLflow
-
-Before starting services, register the downloaded model:
+### 2. Create required directories
 
 ```bash
-# Start MLflow server first (see step 3)
-# Then in another terminal:
-python scripts/register_model.py
-python scripts/set_production.py
+mkdir -p data/inference/{input,output,checkpoints} mlflow_data/artifacts logs
 ```
 
-### 3. Start MLflow Server
+### 3. Start core services with Docker
+
+MLflow and the Model Service run in Docker. Start them together:
 
 ```bash
-ABS_PATH=$(pwd)
-mlflow server \
-  --backend-store-uri sqlite:///$ABS_PATH/mlflow_data/mlflow.db \
-  --default-artifact-root file://$ABS_PATH/mlflow_data/artifacts \
-  --host 0.0.0.0 \
-  --port 5000
+docker compose up --build -d
 ```
 
-Access at: http://localhost:5000
-
-### 4. Start Model Service
+Wait for both to be healthy (takes ~60s on first build — torch is large):
 
 ```bash
-# In a new terminal
-cd model_service
-uvicorn app:app --host 0.0.0.0 --port 8000
+docker compose ps  # Both should show "healthy"
 ```
 
-Test health: `curl http://localhost:8000/health`
+Services are accessible at:
+- MLflow UI: http://localhost:5000
+- Model Service: http://localhost:8000/docs
 
-### 5. Start Monitoring Stack
+### 4. Register the model
+
+This only needs to be done once (or after clearing the MLflow database). Run while Docker services are running:
 
 ```bash
-cd monitoring
-docker-compose up -d
+MLFLOW_TRACKING_URI=http://localhost:5000 python scripts/register_model.py
+MLFLOW_TRACKING_URI=http://localhost:5000 python scripts/set_production.py
 ```
 
-Access:
-- Grafana: http://localhost:3000 (admin/admin)
-- Prometheus: http://localhost:9090
+> ⚠️ **Always register while the Dockerised MLflow server is running.** Registering against a locally-run MLflow instance records host-absolute artifact paths that containers cannot resolve. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full explanation of why this matters.
 
-### 6. Run Streamlit UI
+After registering, restart the model service to load the model:
+
+```bash
+docker compose restart model-service
+```
+
+Verify it loaded: `curl http://localhost:8000/health`
+
+### 5. Start the Streamlit UI (optional)
 
 ```bash
 streamlit run streamlit-ui/app.py
@@ -269,262 +112,113 @@ streamlit run streamlit-ui/app.py
 
 Access at: http://localhost:8501
 
----
-
-## 📊 Usage
-
-### Manual Batch Processing (via UI)
-
-1. Open Streamlit UI at http://localhost:8501
-2. Navigate to "Upload & Classify" tab
-3. Upload images (JPG/PNG)
-4. Click "Run Classification"
-5. View results in real-time
-6. Download results as CSV
-
-### Automated Batch Processing (via CLI)
+### 6. Start the monitoring stack (optional)
 
 ```bash
-# Place images in input directory
-cp /path/to/images/* data/inference/input/
-
-# Run batch inference
-python orchestrator/batch_inference.py
-
-# View results
-cat data/inference/output/predictions_*.json
+cd monitoring && docker compose up -d
 ```
 
-### Scheduled Automation (Cron)
+Access Grafana at http://localhost:3000 (admin/admin).
 
-The system runs automatically every night at 2 AM:
+---
+
+## Running Batch Jobs
+
+The orchestrator runs as a one-shot container — triggered manually or by cron.
+
+### Manual run
 
 ```bash
-# Edit crontab
+# Populate the input directory with test images
+find data/processed/test -name "*.jpg" | shuf -n 50 | xargs -I {} cp {} data/inference/input/
+
+# Run the orchestrator
+docker compose --profile manual up orchestrator
+```
+
+Results are written to `data/inference/output/` as JSON.
+
+### Scheduled via cron
+
+```bash
 crontab -e
 
-# Add this line
-0 2 * * * cd /path/to/autorma && source .venv/bin/activate && python orchestrator/batch_inference.py >> logs/cron.log 2>&1
+# Add: run nightly at 2 AM
+0 2 * * * cd /home/youruser/autorma && docker compose --profile manual run --rm orchestrator >> logs/cron.log 2>&1
+```
+
+### Idempotency
+
+The orchestrator checkpoints after each batch to `data/inference/checkpoints/checkpoint.json`. Re-running will skip already-processed images. To force a full rerun:
+
+```bash
+rm data/inference/checkpoints/checkpoint.json
 ```
 
 ---
 
-## 🔄 Model Update Workflow
+## Model Management
 
-### Training a New Model
-
-1. Train model on Colab (see notebooks/)
-2. Download checkpoint to `models/v{N}/`
-3. Register in MLflow:
+**Register a new model version:**
 
 ```bash
-python scripts/register_model.py
+MLFLOW_TRACKING_URI=http://localhost:5000 python scripts/register_model.py
+MLFLOW_TRACKING_URI=http://localhost:5000 python scripts/set_production.py
 ```
 
-### Promoting to Production
-
-```bash
-python scripts/set_production.py
-```
-
-This updates the production alias. Model Service will load the new version on next restart.
-
-### Rollback
+**Roll back to a previous version:**
 
 ```python
 import mlflow
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
+mlflow.set_tracking_uri("http://localhost:5000")
 client = mlflow.MlflowClient()
-
-# Rollback to version 1
-client.set_registered_model_alias("refund-classifier", "production", "1")
+client.set_registered_model_alias("refund-classifier", "production", "1")  # version number
 ```
 
-Restart Model Service to apply.
+Then restart the model service: `docker compose restart model-service`
 
 ---
 
-## 📈 Monitoring
+## Monitoring
 
-### Key Metrics Tracked
+With the monitoring stack running:
 
-**Model Service:**
-- Request rate and latency (p50, p95, p99)
-- Prediction confidence distribution
-- Images processed per class
-- API success/failure rate
+- **Prometheus:** http://localhost:9090
+- **Pushgateway:** http://localhost:9091
+- **Grafana:** http://localhost:3000 — request rate, latency, class distribution, batch success rate
 
-**Batch Orchestrator:**
-- Images processed per run
-- Batch processing duration
-- Success rate
-- Failed images count
+Key metrics exposed by the model service at `/metrics`:
 
-### Accessing Dashboards
-
-**Grafana:** http://localhost:3000
-- Dashboard: "Refund Classifier Monitoring"
-- Real-time metrics visualization
-- Historical trends
-
-**Prometheus:** http://localhost:9090
-- Raw metrics queries
-- Target health status
+- `api_requests_total{endpoint, status}`
+- `api_request_duration_seconds`
+- `prediction_confidence`
+- `predictions_by_class_total{class_name}`
+- `images_processed_total`
 
 ---
 
-## 🧪 Testing
+## Troubleshooting
 
-### Test Model Service
+**Model service fails with "No such file or directory" on an artifact path**
 
-```bash
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "image_paths": ["/absolute/path/to/test/image.jpg"]
-  }'
-```
+The model was registered against a non-Docker MLflow instance. The artifact path was recorded as a host-absolute path containers can't reach. Fix:
 
-### Test Batch Processing
+1. Delete the registered model and its experiment in the MLflow UI (http://localhost:5000)
+2. Ensure Docker is running: `docker compose up -d`
+3. Re-register: `MLFLOW_TRACKING_URI=http://localhost:5000 python scripts/register_model.py`
+4. `docker compose restart model-service`
 
-```bash
-# Copy test images
-find data/processed/test -name "*.jpg" | shuf -n 20 | xargs -I {} cp {} data/inference/input/
+**Model service exits immediately**
 
-# Run orchestrator
-python orchestrator/batch_inference.py
+`docker logs model-service` — MLflow likely wasn't healthy when the service started. Run `docker compose restart model-service`.
 
-# Verify results
-ls -lh data/inference/output/
-```
+**Orchestrator can't find images**
 
-### Verify Monitoring
+`data/inference/input/` on your host is mounted into the container. Confirm images are there: `ls data/inference/input/`.
 
-```bash
-# Check Prometheus targets
-curl http://localhost:9090/api/v1/targets
+**Grafana shows no data**
 
-# Check metrics endpoint
-curl http://localhost:8000/metrics | grep images_processed
-```
-
----
-
-## 🛠️ Troubleshooting
-
-### Model Service won't start
-
-**Issue:** `model_loaded` shows 0 in metrics
-
-**Solution:**
-1. Check MLflow is running: `curl http://localhost:5000/health`
-2. Verify model is registered: Check MLflow UI
-3. Ensure production alias is set: `python scripts/set_production.py`
-
-### Prometheus can't scrape Model Service
-
-**Issue:** Targets show DOWN in Prometheus
-
-**Solution (WSL):**
-1. Get WSL IP: `ip addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'`
-2. Update `monitoring/prometheus.yml` with your IP
-3. Restart: `docker-compose restart prometheus`
-
-### Batch processing fails
-
-**Issue:** Images not being processed
-
-**Solution:**
-1. Check Model Service is running: `curl http://localhost:8000/health`
-2. Verify image paths are absolute
-3. Check logs: `tail -f logs/orchestrator.log`
-4. Look for checkpoint issues: `cat data/inference/checkpoints/checkpoint.json`
-
----
-
-## 📚 Documentation
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Detailed system design and component breakdown
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Development guide and implementation notes
-
----
-
-## 🎓 Key Learnings & Design Decisions
-
-### Why Batch Processing?
-
-- **Cost Efficiency:** Process overnight during low-traffic hours
-- **Resource Optimization:** Batch GPU inference is more efficient than single predictions
-- **Business Alignment:** Returns are processed daily, not real-time
-- **Simplicity:** Avoids complexity of real-time streaming systems
-
-### Why Separate Model Service?
-
-- **Testability:** Can test inference independently
-- **Deployability:** Update orchestration logic without reloading model
-- **Scalability:** Can scale Model Service separately if needed
-- **Technology Flexibility:** Could rewrite orchestrator in Go without touching ML code
-
-### Why MLflow?
-
-- **Reproducibility:** Track experiments, hyperparameters, metrics
-- **Version Control:** Manage model versions with aliases
-- **Easy Rollback:** Quickly revert to previous model if needed
-- **Team Collaboration:** Multiple data scientists can share experiments
-
-### Why Prometheus + Grafana?
-
-- **Industry Standard:** Production monitoring pattern
-- **Time-Series Data:** Perfect for tracking metrics over time
-- **Alerting Ready:** Can add alerts on metric thresholds
-- **Visualization:** Grafana provides professional dashboards
-
----
-
-## 🔄 Reproducibility
-
-### Recreating the System from Scratch
-
-**1. Dataset Preparation:**
-- Source: [Fashion Product Images Dataset on Kaggle](https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset)
-- Process documented in: `notebooks/01_data_preparation.ipynb`
-- Categories: Casual Shoes, Handbags, Shirts, Tops, Watches
-- 500 images per class, 70/15/15 train/val/test split
-- **N.B :** - Run `notebooks/01_data_preparation.ipynb` in Kaggle notebooks not on local PC.
-
-**2. Model Training:**
-- Training notebook: Available in Google Colab or local Jupyter
-- Architecture: EfficientNet-B0 (pretrained on ImageNet)
-- Hyperparameters logged in: `models/v1/training_metadata.json`
-- Training environment: Google Colab with T4 GPU
-- Training time: ~12 minutes for 15 epochs
-
-**3. Model Registration:**
-```bash
-# After training and downloading checkpoint
-python scripts/register_model.py
-python scripts/set_production.py
-```
-
-**4. System Deployment:**
-- Follow Quick Start guide above
-- All configuration is in code (no manual setup required)
-
-### For Evaluators / New Developers
-
-**To verify this project:**
-1. Download assets from links in Asset Management section
-2. Follow Quick Start instructions
-3. System should be running within 30 minutes
-
-**To retrain from scratch:**
-1. Download raw dataset from Kaggle
-2. Run data preparation notebook
-3. Run training notebook on Colab
-4. Register new model version
-5. Promote to production
-
-All steps are documented and reproducible.
+Run a batch job to generate traffic first, then expand the time range to "Last 6 hours".
 
 ---
 
@@ -532,10 +226,8 @@ All steps are documented and reproducible.
 
 Built as a final year project demonstrating end-to-end ML systems engineering.
 
-**Technologies:** Python, PyTorch, FastAPI, MLflow, Prometheus, Grafana, Streamlit, Docker
-
----
+**Stack:** Python · PyTorch · FastAPI · MLflow · Docker · Prometheus · Grafana · Streamlit
 
 ## 📄 License
 
-MIT License - See LICENSE file for details
+MIT — see LICENSE file.
