@@ -4,8 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    MODEL_SERVICE_URL: str = "http://localhost:8000"
-    MLFLOW_TRACKING_URI: str = "http://localhost:5000"
+    MODEL_SERVICE_URL: str
+    MLFLOW_TRACKING_URI: str
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=False, extra="ignore"
     )

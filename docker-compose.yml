@@ -1,0 +1,65 @@
+services:
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: mlflow.Dockerfile
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_SERVER_ALLOWED_HOSTS=mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000
+    volumes:
+      - ./mlflow_data:/mlflow_data
+    networks:
+      - ml-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  model-service:
+    build:
+      context: .
+      dockerfile: model_service.Dockerfile
+    container_name: model-service
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+    networks:
+      - ml-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: orchestrator.Dockerfile
+    container_name: batch-orchestrator
+    environment:
+      - MODEL_SERVICE_URL=http://model-service:8000
+    depends_on:
+      model-service:
+        condition: service_healthy
+    volumes:
+      - ./data/inference:/data/inference
+      - ./logs:/app/logs
+    networks:
+      - ml-network
+    profiles:
+      - manual
+
+networks:
+  ml-network:
+    driver: bridge

@@ -6,7 +6,7 @@ import torch
 
 MODEL_PATH = Path("models/v1/best_model.pth")
 METADATA_PATH = Path("models/v1/training_metadata.json")
-MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+MLFLOW_TRACKING_URI = "http://localhost:5000"
 
 
 with open(METADATA_PATH) as f:
